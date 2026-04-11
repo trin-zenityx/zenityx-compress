@@ -163,9 +163,13 @@ zenityx-compress/
 
 ```
 /var/compress/uploads/<jobId>/<originalName>          # temp, deleted after encode
+/var/compress/uploads/<jobId>/pass.log                # ffmpeg 2-pass log
+/var/compress/uploads/<jobId>/pass.log.mbtree         # ffmpeg 2-pass mbtree
 /var/compress/outputs/<jobId>/<originalName>.ready-for-<preset>.<ext>
 /var/log/compress/app.log                             # pino JSON, rotated daily
 ```
+
+The ffmpeg 2-pass log files (`pass.log`, `pass.log.mbtree`) are written into the same `uploads/<jobId>/` directory as the input file. When the job finishes (`done` or `error`), `video-job.ts` removes the entire `uploads/<jobId>/` directory, which cleans up the input and both pass-log files in one `rm -rf`. The orphan sweep in `storage/cleanup.ts` handles any `uploads/<jobId>/` directory whose mtime is older than 30 minutes as a safety net.
 
 ## 7. Component responsibilities
 
@@ -200,7 +204,7 @@ interface Preset {
 
 interface Job {
   id: string;              // nanoid(10)
-  sessionId: string;       // isolates jobs per browser session
+  sessionId: string;       // isolates jobs per browser session (see note below)
   type: MediaType;
   originalName: string;
   inputPath: string;
@@ -208,12 +212,21 @@ interface Job {
   preset: Preset;
   customTargetMB?: number;
   createdAt: number;
+  // State machine:
+  //   video: queued → probing → pass1 → pass2 → done | error
+  //   image: queued → probing → encoding → done | error
+  // "encoding" is image-only; video jobs go through pass1 then pass2 instead.
   state: "queued" | "probing" | "pass1" | "pass2" | "encoding" | "done" | "error";
   progress: number;        // 0–100
   error?: string;
   inputSize?: number;
   outputSize?: number;
 }
+```
+
+**Note on `sessionId`:** each browser session (login on a given device) gets its own `sessionId` derived from the signed cookie. Two admins on different devices sharing the same password still get two different `sessionId`s, so `GET /api/jobs` correctly shows each device its own jobs rather than merging them. This is the intended behavior.
+
+```typescript
 
 interface ProgressEvent {
   jobId: string;
@@ -247,19 +260,31 @@ export function calcVideoBitrate(
 
 ```typescript
 async function compressImage(inputPath: string, outputPath: string, maxBytes: number) {
-  let quality = 95;
-  while (quality >= 50) {
-    await sharp(inputPath)
-      .flatten({ background: { r: 255, g: 255, b: 255 } })  // PNG alpha → white
-      .jpeg({ quality, mozjpeg: true })
-      .toFile(outputPath);
-    const { size } = await fs.stat(outputPath);
-    if (size <= maxBytes) return { quality, size };
-    quality -= 5;
+  // Read once, reuse Pipeline; scale applied via sharp.resize() per attempt.
+  const { width, height } = await sharp(inputPath).metadata();
+  let scale = 1.0;
+
+  while (scale >= 0.25) {          // don't shrink below 25% of original
+    let quality = 95;
+    const targetW = Math.round(width! * scale);
+    const targetH = Math.round(height! * scale);
+
+    while (quality >= 50) {
+      await sharp(inputPath)
+        .flatten({ background: { r: 255, g: 255, b: 255 } })  // PNG alpha → white
+        .resize(targetW, targetH, { fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality, mozjpeg: true })
+        .toFile(outputPath);
+      const { size } = await fs.stat(outputPath);
+      if (size <= maxBytes) return { quality, size, scale };
+      quality -= 5;
+    }
+
+    // Quality loop exhausted at this scale → downscale 15% and retry
+    scale -= 0.15;
   }
-  // Fallback: downscale 15% and retry quality loop
-  // (implementation detail in video-job / image-job)
-  throw new Error("ไม่สามารถลดขนาดให้เข้าเป้าได้ ลอง downscale ก่อน");
+
+  throw new Error("ไม่สามารถลดขนาดให้เข้าเป้าได้แม้หลังจาก downscale");
 }
 ```
 
@@ -298,6 +323,13 @@ Returns all jobs belonging to the current session that are still alive (not expi
 ### GET /api/download/:jobId
 Streams the output, with `Content-Disposition: attachment; filename*=UTF-8''<encoded>` per RFC 5987 to preserve Thai characters. 404 if expired, 403 if job belongs to another session.
 
+### DELETE /api/jobs/:jobId
+Two behaviors depending on state:
+- **In-flight job** (`probing | pass1 | pass2 | encoding`): the worker sends `SIGTERM` to the ffmpeg / sharp child process, marks the job `state=error, error=cancelled_by_user`, pushes a final SSE `error` event, and cleans up the partial output and pass-log files.
+- **Completed job** (`done`): unlinks the output file immediately rather than waiting for the retention sweep.
+
+Returns `200 { ok: true }` on success, `404` if job does not exist, `403` if the job belongs to another session.
+
 ### Health
 `GET /api/health` → `{ ok: true, version, uptime, queueDepth }`.
 
@@ -329,6 +361,8 @@ Streams the output, with `Content-Disposition: attachment; filename*=UTF-8''<enc
 | `FFMPEG_PASS1_FAILED` | การเข้ารหัสรอบที่ 1 ล้มเหลว: `{reason}` |
 | `FFMPEG_PASS2_FAILED` | การเข้ารหัสรอบที่ 2 ล้มเหลว: `{reason}` |
 | `OUTPUT_OVERSIZED` | Warning: บีบได้ `{X}` MB (เกิน target `{Y}` MB เล็กน้อย) — download ยังใช้ได้ |
+
+> **On `OUTPUT_OVERSIZED`:** the 93% safety margin in section 4 is chosen so this warning should almost never fire. It exists as a belt-and-suspenders code path for pathological edge cases — very short clips where audio dominates, or content where x264 hits rate-control ceiling — rather than as part of the normal flow. If this warning appears regularly, the safety margin needs to be tightened further.
 | `SHARP_FAILED` | โหลดไฟล์ภาพไม่ได้: `{reason}` |
 | `IMAGE_TOO_LARGE_AT_Q50` | ลด quality แล้วยังเกินเป้า — auto-downscale แล้วลองอีกครั้ง |
 | `WORKER_TIMEOUT` | การเข้ารหัสใช้เวลานานเกินไป (>15 นาที) |
@@ -338,7 +372,7 @@ Streams the output, with `Content-Disposition: attachment; filename*=UTF-8''<enc
 | Code | Action |
 |---|---|
 | `DISK_FULL` | Emergency cleanup: delete 10 oldest outputs, retry once, then 507 |
-| `QUEUE_OVERFLOW` | 503 when queue > 20 items |
+| `QUEUE_OVERFLOW` | 503 when queue depth > `QUEUE_MAX` (default 20) |
 | `UNEXPECTED` | 500, log full stack trace with request id |
 
 **Network / client-side:**
@@ -435,6 +469,7 @@ MAX_UPLOAD_MB=500
 
 WORKER_CONCURRENCY=2
 WORKER_TIMEOUT_MS=900000
+QUEUE_MAX=20
 
 LOGIN_RATE_LIMIT=10
 LOGIN_RATE_WINDOW_MS=900000
