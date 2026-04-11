@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
@@ -26,10 +26,10 @@ export async function registerDownloadRoute(
 ): Promise<void> {
   registerTestSeam(app);
 
-  app.get(
+  app.get<{ Params: { jobId: string } }>(
     "/api/download/:jobId",
     { preHandler: requireLogin },
-    async (req: FastifyRequest<{ Params: { jobId: string } }>, reply: FastifyReply) => {
+    async (req, reply) => {
       const sessionId = req.session.get("userId")!;
       const { jobId } = req.params;
       const job = opts.queue.get(jobId);

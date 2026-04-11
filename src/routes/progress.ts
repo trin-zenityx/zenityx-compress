@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { requireLogin } from "../auth/require-login.js";
 import type { JobQueue } from "../jobs/queue.js";
 import type { JobEvent } from "../jobs/types.js";
@@ -23,13 +23,10 @@ export async function registerProgressRoute(
   registerTestSeam(app);
   const heartbeatMs = opts.heartbeatMs ?? 15_000;
 
-  app.get(
+  app.get<{ Params: { jobId: string } }>(
     "/api/progress/:jobId",
     { preHandler: requireLogin },
-    async (
-      req: FastifyRequest<{ Params: { jobId: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req, reply) => {
       const sessionId = req.session.get("userId")!;
       const { jobId } = req.params;
       const job = opts.queue.get(jobId);
