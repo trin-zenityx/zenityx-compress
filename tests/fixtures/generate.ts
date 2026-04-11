@@ -7,19 +7,24 @@ import sharp from "sharp";
 const execFileP = promisify(execFile);
 
 /**
- * Creates a short colored video with silent audio at the given path.
- * Default: 2 seconds, 320x240, 30fps, H.264.
+ * Creates a short video with complex (mandelbrot) content and silent audio
+ * at the given path. Default: 2 seconds, 320x240, 30fps, H.264. Mandelbrot
+ * content is used instead of a solid color so that re-encoding with
+ * preset=slow takes long enough for cancellation tests to reliably fire
+ * their AbortSignal during pass1/pass2 instead of after the encoder exits.
+ * The `color` option is ignored but kept for backward compatibility.
  */
 export async function makeTinyVideo(
   outputPath: string,
   opts: { durationSec?: number; width?: number; height?: number; color?: string } = {},
 ): Promise<void> {
-  const { durationSec = 2, width = 320, height = 240, color = "red" } = opts;
+  const { durationSec = 2, width = 320, height = 240 } = opts;
   await execFileP("ffmpeg", [
     "-y",
-    "-f", "lavfi", "-i", `color=c=${color}:s=${width}x${height}:d=${durationSec}:r=30`,
+    "-f", "lavfi", "-i", `mandelbrot=s=${width}x${height}:rate=30`,
     "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
     "-shortest",
+    "-t", String(durationSec),
     "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
     "-c:a", "aac",
     outputPath,

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtemp, rm, stat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runVideoJob, VideoJobError } from "./video-job.js";
+import { runVideoJob } from "./video-job.js";
 import { makeTinyVideo, makeInvalidFile } from "../../tests/fixtures/generate.js";
 
 describe("runVideoJob — happy path", () => {
