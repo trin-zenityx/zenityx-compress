@@ -1,6 +1,10 @@
 /* global Alpine */
-function compressApp() {
-  return {
+// Register the compressApp component via Alpine's official "alpine:init" hook so
+// it is always available before Alpine evaluates any x-data expression. Using
+// a global `function compressApp(){}` pattern races with defer script ordering
+// when Alpine auto-initialises early (observed in Chrome 2026-04).
+document.addEventListener("alpine:init", () => {
+  window.Alpine.data("compressApp", () => ({
     authed: false,
     passwordInput: "",
     loggingIn: false,
@@ -204,8 +208,8 @@ function compressApp() {
         this.toasts = this.toasts.filter((t) => t.id !== id);
       }, 5000);
     },
-  };
-}
+  }));
+});
 
 function fmtMB(bytes) {
   if (bytes == null) return "?";
@@ -220,5 +224,3 @@ function uploadErrorMessage(status, body) {
   if (status === 401) return "เซสชั่นหมดอายุ กรุณาเข้าสู่ระบบใหม่";
   return body?.error ?? "อัปโหลดไม่สำเร็จ";
 }
-
-window.compressApp = compressApp;

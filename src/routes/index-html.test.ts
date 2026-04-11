@@ -35,14 +35,17 @@ describe("static index.html", () => {
     const res = await server.app.inject({ method: "GET", url: "/" });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toMatch(/html/);
-    expect(res.body).toContain('x-data="compressApp()"');
+    expect(res.body).toContain('x-data="compressApp"');
     expect(res.body).toContain("ZenityX Media Compressor");
   });
 
-  it("serves /app.js and /styles.css", async () => {
+  it("serves /app.js registering Alpine data component in alpine:init", async () => {
     const js = await server.app.inject({ method: "GET", url: "/app.js" });
     expect(js.statusCode).toBe(200);
-    expect(js.body).toContain("compressApp");
+    // Must register via official Alpine.data() pattern inside alpine:init,
+    // not as a global function — global pattern races with defer script order.
+    expect(js.body).toContain('addEventListener("alpine:init"');
+    expect(js.body).toContain('Alpine.data("compressApp"');
     const css = await server.app.inject({ method: "GET", url: "/styles.css" });
     expect(css.statusCode).toBe(200);
     expect(css.body).toContain("--zx-red");
