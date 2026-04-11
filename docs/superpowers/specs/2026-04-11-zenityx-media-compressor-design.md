@@ -260,7 +260,9 @@ export function calcVideoBitrate(
 
 ```typescript
 async function compressImage(inputPath: string, outputPath: string, maxBytes: number) {
-  // Read once, reuse Pipeline; scale applied via sharp.resize() per attempt.
+  // Read metadata once to learn original dimensions.
+  // Note: sharp pipelines are single-use, so each attempt re-opens the input.
+  // libvips caches the decoded source, so re-opening is cheap after the first read.
   const { width, height } = await sharp(inputPath).metadata();
   let scale = 1.0;
 
@@ -310,9 +312,10 @@ async function compressImage(inputPath: string, outputPath: string, maxBytes: nu
 - 429 → `{ "error": "rate_limited", "retryAfterSec": N }`
 
 ### POST /api/upload
-- `multipart/form-data`: `file`, `preset`, `customTargetMB?`, `type`
+- `multipart/form-data`: `file`, `preset`, `customTargetMB?`
+- The server detects media type from the uploaded file's magic bytes and MIME; the client does not send a `type` field. The returned `type` in the response is authoritative.
 - 200 → `{ jobId, type, originalName, inputSize, probe: { duration, width, height, fps }, targetVideoBitrateKbps, estimatedDurationSeconds }`
-- 413 file > 500 MB · 415 unsupported type · 422 bitrate < 500 kbps
+- 413 file > 500 MB · 415 unsupported type · 422 bitrate < 500 kbps · 503 queue full (body `{ error: "queue_full", queueDepth, queueMax }`)
 
 ### GET /api/progress/:jobId (SSE)
 Headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`. Emits `progress`, `done`, and `error` named events, plus a `: ping` heartbeat every 15 s.
@@ -324,9 +327,11 @@ Returns all jobs belonging to the current session that are still alive (not expi
 Streams the output, with `Content-Disposition: attachment; filename*=UTF-8''<encoded>` per RFC 5987 to preserve Thai characters. 404 if expired, 403 if job belongs to another session.
 
 ### DELETE /api/jobs/:jobId
-Two behaviors depending on state:
+Behavior depends on state:
+- **Queued job** (`queued`): removed from the BullMQ queue before any child process starts; the `uploads/<jobId>/` directory is unlinked. No SSE event (the job never started processing).
 - **In-flight job** (`probing | pass1 | pass2 | encoding`): the worker sends `SIGTERM` to the ffmpeg / sharp child process, marks the job `state=error, error=cancelled_by_user`, pushes a final SSE `error` event, and cleans up the partial output and pass-log files.
 - **Completed job** (`done`): unlinks the output file immediately rather than waiting for the retention sweep.
+- **Already errored job** (`error`): unlinks any lingering files and removes the job record.
 
 Returns `200 { ok: true }` on success, `404` if job does not exist, `403` if the job belongs to another session.
 
@@ -361,11 +366,11 @@ Returns `200 { ok: true }` on success, `404` if job does not exist, `403` if the
 | `FFMPEG_PASS1_FAILED` | การเข้ารหัสรอบที่ 1 ล้มเหลว: `{reason}` |
 | `FFMPEG_PASS2_FAILED` | การเข้ารหัสรอบที่ 2 ล้มเหลว: `{reason}` |
 | `OUTPUT_OVERSIZED` | Warning: บีบได้ `{X}` MB (เกิน target `{Y}` MB เล็กน้อย) — download ยังใช้ได้ |
-
-> **On `OUTPUT_OVERSIZED`:** the 93% safety margin in section 4 is chosen so this warning should almost never fire. It exists as a belt-and-suspenders code path for pathological edge cases — very short clips where audio dominates, or content where x264 hits rate-control ceiling — rather than as part of the normal flow. If this warning appears regularly, the safety margin needs to be tightened further.
 | `SHARP_FAILED` | โหลดไฟล์ภาพไม่ได้: `{reason}` |
 | `IMAGE_TOO_LARGE_AT_Q50` | ลด quality แล้วยังเกินเป้า — auto-downscale แล้วลองอีกครั้ง |
 | `WORKER_TIMEOUT` | การเข้ารหัสใช้เวลานานเกินไป (>15 นาที) |
+
+> **On `OUTPUT_OVERSIZED`:** the 93% safety margin in section 4 is chosen so this warning should almost never fire. It exists as a belt-and-suspenders code path for pathological edge cases — very short clips where audio dominates, or content where x264 hits rate-control ceiling — rather than as part of the normal flow. If this warning appears regularly, the safety margin needs to be tightened further.
 
 **System errors (5xx):**
 
