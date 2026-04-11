@@ -7,8 +7,12 @@
   <link rel="icon" type="image/png" href="/assets/favicon.png" />
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <!-- app.js MUST be loaded before Alpine so our alpine:init listener is
+       attached before Alpine dispatches the event. Both are defer, so they
+       execute in document order. Swapping these two lines reintroduces a
+       race where Alpine starts (via queueMicrotask) before app.js runs. -->
   <script defer src="/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
 <body class="bg-zinc-100 text-zinc-900 font-sans antialiased">
   <div x-data="compressApp" x-cloak class="min-h-screen flex flex-col">
