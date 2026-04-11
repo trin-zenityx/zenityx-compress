@@ -1,0 +1,10 @@
+:root {
+  --zx-red: #e50914;
+  --zx-red-dark: #c40812;
+}
+
+[x-cloak] { display: none !important; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", sans-serif;
+}
