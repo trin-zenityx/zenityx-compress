@@ -1,0 +1,25 @@
+[Unit]
+Description=ZenityX Media Compressor
+After=network.target
+
+[Service]
+Type=simple
+User=compress
+Group=compress
+WorkingDirectory=/opt/compress/app
+EnvironmentFile=/opt/compress/app/.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/compress/app.log
+StandardError=append:/var/log/compress/app.log
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/compress /var/log/compress
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target
