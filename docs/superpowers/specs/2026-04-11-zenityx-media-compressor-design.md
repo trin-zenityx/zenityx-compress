@@ -49,7 +49,7 @@ Every row here is a decision fixed during brainstorming. The implementation plan
 
 | Area | Decision | Rationale |
 |---|---|---|
-| Architecture | Server-side on the existing VPS `194.233.69.204` | VPS is idle, CPU is 2x slower than local Mac but acceptable; ffmpeg 2-pass quality beats client-side wasm. |
+| Architecture | Server-side on the existing VPS `<YOUR_VPS_IP>` | VPS is idle, CPU is 2x slower than local Mac but acceptable; ffmpeg 2-pass quality beats client-side wasm. |
 | Hostname | `compress.zenityx.com` (A record → VPS IP) | Uses existing domain. |
 | TLS | Let's Encrypt via Caddy (automatic) | Zero-config HTTPS. |
 | Auth | Single shared password, bcrypt cost 12, signed cookie session | Small team, lowest-friction. |
@@ -485,7 +485,7 @@ LOGIN_RATE_WINDOW_MS=900000
 ```
 git push origin main
 
-ssh compress@194.233.69.204
+ssh compress@<YOUR_VPS_IP>
 cd /opt/compress
 git pull
 npm install --production
@@ -537,6 +537,6 @@ If future demand requires it: raise `WORKER_CONCURRENCY`, introduce Redis-backed
 
 - Logo: `/Users/trin/Logo/zenityX Logo2.png` and `/Users/trin/Logo/zenityX Logo1.png`.
 - App icon: `/Users/trin/icon ZenityX-Final.png`.
-- VPS: `194.233.69.204` (Ubuntu 24.04, Node 22, 4 vCPU / 8 GB / 145 GB), currently running OpenClaw gateway on ports 18789-18792 and a Node app on 4000.
+- VPS: `<YOUR_VPS_IP>` (Ubuntu 24.04, Node 22, 4 vCPU / 8 GB / 145 GB), currently running OpenClaw gateway on ports 18789-18792 and a Node app on 4000.
 - Domain: `zenityx.com` (subdomain `compress.zenityx.com` to be created as A record).
 - Brand color: ZenityX red `#E50914`, `#C40812` for hover/gradient end.

@@ -12,15 +12,15 @@ Static configuration files for the production VPS deployment.
 
 ```bash
 # 1. Push code to VPS (either git clone from GitHub, or bare-repo push — see plan chunk 9.4)
-ssh root@194.233.69.204 'sudo -u compress git clone https://github.com/<owner>/zenityx-compress.git /opt/compress/app'
-ssh root@194.233.69.204 'cd /opt/compress/app && sudo -u compress npm ci --omit=dev && sudo -u compress npm run build'
+ssh root@<YOUR_VPS_IP> 'sudo -u compress git clone https://github.com/<owner>/zenityx-compress.git /opt/compress/app'
+ssh root@<YOUR_VPS_IP> 'cd /opt/compress/app && sudo -u compress npm ci --omit=dev && sudo -u compress npm run build'
 
 # 2. Generate bcrypt hash and session secret locally, create .env on VPS
-ssh root@194.233.69.204 'sudo -u compress /opt/compress/app/node_modules/.bin/tsx /opt/compress/app/scripts/hash-password.ts'
+ssh root@<YOUR_VPS_IP> 'sudo -u compress /opt/compress/app/node_modules/.bin/tsx /opt/compress/app/scripts/hash-password.ts'
 # Copy the $2b$... hash
 
 NODE_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-ssh root@194.233.69.204 "sudo -u compress tee /opt/compress/app/.env > /dev/null" <<ENV
+ssh root@<YOUR_VPS_IP> "sudo -u compress tee /opt/compress/app/.env > /dev/null" <<ENV
 NODE_ENV=production
 PORT=4100
 HOST=127.0.0.1
@@ -37,18 +37,18 @@ QUEUE_MAX=20
 LOGIN_RATE_LIMIT=10
 LOGIN_RATE_WINDOW_MS=900000
 ENV
-ssh root@194.233.69.204 'chmod 600 /opt/compress/app/.env && chown compress:compress /opt/compress/app/.env'
+ssh root@<YOUR_VPS_IP> 'chmod 600 /opt/compress/app/.env && chown compress:compress /opt/compress/app/.env'
 
 # 3. Install Caddy (first time only)
-ssh root@194.233.69.204 'apt install -y debian-keyring debian-archive-keyring apt-transport-https curl && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" | tee /etc/apt/sources.list.d/caddy-stable.list && apt update && apt install -y caddy'
+ssh root@<YOUR_VPS_IP> 'apt install -y debian-keyring debian-archive-keyring apt-transport-https curl && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" | tee /etc/apt/sources.list.d/caddy-stable.list && apt update && apt install -y caddy'
 
 # 4. Copy config files
-scp deploy/Caddyfile root@194.233.69.204:/etc/caddy/Caddyfile
-scp systemd/compress.service root@194.233.69.204:/etc/systemd/system/compress.service
-scp deploy/logrotate.conf root@194.233.69.204:/etc/logrotate.d/compress
+scp deploy/Caddyfile root@<YOUR_VPS_IP>:/etc/caddy/Caddyfile
+scp systemd/compress.service root@<YOUR_VPS_IP>:/etc/systemd/system/compress.service
+scp deploy/logrotate.conf root@<YOUR_VPS_IP>:/etc/logrotate.d/compress
 
 # 5. Enable and start
-ssh root@194.233.69.204 'systemctl daemon-reload && systemctl enable compress && systemctl start compress && systemctl reload caddy && systemctl status compress --no-pager | head -15'
+ssh root@<YOUR_VPS_IP> 'systemctl daemon-reload && systemctl enable compress && systemctl start compress && systemctl reload caddy && systemctl status compress --no-pager | head -15'
 
 # 6. Verify
 curl https://compress.zenityx.com/api/health
@@ -59,7 +59,7 @@ curl https://compress.zenityx.com/api/health
 Before step 5, add this A record in the zenityx.com DNS registrar:
 - Type: A
 - Name: compress
-- Value: 194.233.69.204
+- Value: <YOUR_VPS_IP>
 - TTL: 300
 
-Verify: `dig +short compress.zenityx.com` should return `194.233.69.204`.
+Verify: `dig +short compress.zenityx.com` should return `<YOUR_VPS_IP>`.

@@ -82,7 +82,7 @@ flarectl dns create-or-update \
   --zone zenityx.com \
   --name compress \
   --type A \
-  --content 194.233.69.204 \
+  --content <YOUR_VPS_IP> \
   --ttl 300 \
   --proxy=false
 ```

@@ -5915,19 +5915,19 @@ Expected: 28 (chunks 1-7) + 3 (chunk 8: html+css, app.js, assets+smoke) = 31 com
 
 ## Chunk 9: Deployment to VPS
 
-This chunk puts everything live at `https://compress.zenityx.com`. Unlike earlier chunks, many steps run over SSH on the VPS (`194.233.69.204`), and the DNS change is done by the human in their registrar dashboard. Tests are replaced by smoke checks because this stage is infrastructure, not code.
+This chunk puts everything live at `https://compress.zenityx.com`. Unlike earlier chunks, many steps run over SSH on the VPS (`<YOUR_VPS_IP>`), and the DNS change is done by the human in their registrar dashboard. Tests are replaced by smoke checks because this stage is infrastructure, not code.
 
 **Chunk 9 produces:**
 - VPS user `compress` with `/opt/compress/` code directory and `/var/compress/{uploads,outputs}` data directories.
 - Installed ffmpeg, Node 22, Caddy on the VPS.
-- DNS A record `compress.zenityx.com → 194.233.69.204`.
+- DNS A record `compress.zenityx.com → <YOUR_VPS_IP>`.
 - Caddyfile reverse-proxying `compress.zenityx.com` → `127.0.0.1:4100` with automatic Let's Encrypt.
 - systemd unit `compress.service` running the app on boot.
 - `.env` on the VPS with a real bcrypt hash and a 64-hex session secret.
 - End-to-end smoke test from a laptop: login, upload, progress, download over HTTPS.
 
 **Prerequisites the human must handle (the plan will pause for them):**
-- SSH access to `root@194.233.69.204`.
+- SSH access to `root@<YOUR_VPS_IP>`.
 - Write access to zenityx.com DNS.
 - A laptop browser to exercise the live URL.
 
@@ -5938,7 +5938,7 @@ All commands in this task run on the VPS as `root` unless otherwise noted.
 - [ ] **Step 1: SSH in and update apt**
 
 ```bash
-ssh root@194.233.69.204
+ssh root@<YOUR_VPS_IP>
 apt update && apt -y upgrade
 ```
 
@@ -6003,7 +6003,7 @@ This step runs in the zenityx.com DNS registrar dashboard, not on the VPS.
 In the DNS manager for `zenityx.com`:
 - **Type:** A
 - **Name / Host:** `compress`
-- **Value / IPv4:** `194.233.69.204`
+- **Value / IPv4:** `<YOUR_VPS_IP>`
 - **TTL:** 300 (5 minutes, keeps retries cheap if we mis-type anything)
 
 - [ ] **Step 2: Verify propagation**
@@ -6013,7 +6013,7 @@ On the laptop:
 dig +short compress.zenityx.com
 ```
 
-Expected output: `194.233.69.204` (possibly after a short delay).
+Expected output: `<YOUR_VPS_IP>` (possibly after a short delay).
 
 If the first `dig` returns nothing, wait 60 s and retry. Do NOT proceed to Task 9.3 until DNS resolves — Caddy's Let's Encrypt challenge needs it.
 
@@ -6106,21 +6106,21 @@ Use whichever option you prefer. Option A is simplest if the repo is already on 
 
 **Option A — clone from GitHub (recommended):**
 ```bash
-ssh root@194.233.69.204
+ssh root@<YOUR_VPS_IP>
 sudo -u compress git clone https://github.com/<your-org>/zenityx-compress.git /opt/compress/app
 ```
 
 **Option B — push from laptop via a bare repo owned by root:**
 ```bash
 # On the VPS (root, because compress user has nologin shell and cannot accept ssh pushes)
-ssh root@194.233.69.204 'git init --bare /opt/compress/repo.git && chown -R root:root /opt/compress/repo.git'
+ssh root@<YOUR_VPS_IP> 'git init --bare /opt/compress/repo.git && chown -R root:root /opt/compress/repo.git'
 
 # On the laptop
-git remote add vps root@194.233.69.204:/opt/compress/repo.git
+git remote add vps root@<YOUR_VPS_IP>:/opt/compress/repo.git
 git push vps main
 
 # Back on the VPS: clone the bare repo into /opt/compress/app owned by compress.
-ssh root@194.233.69.204 'sudo -u compress git clone /opt/compress/repo.git /opt/compress/app'
+ssh root@<YOUR_VPS_IP> 'sudo -u compress git clone /opt/compress/repo.git /opt/compress/app'
 ```
 
 Either option leaves `/opt/compress/app/` owned by `compress:compress` with the full working tree.
@@ -6128,7 +6128,7 @@ Either option leaves `/opt/compress/app/` owned by `compress:compress` with the 
 - [ ] **Step 2: Install production deps and build**
 
 ```bash
-ssh root@194.233.69.204
+ssh root@<YOUR_VPS_IP>
 sudo -u compress bash <<'EOF'
 cd /opt/compress/app
 npm ci --omit=dev
@@ -6303,8 +6303,8 @@ git commit -m "chore(deploy): capture production systemd unit in repo"
 
 Future redeploys can copy this file to `/etc/systemd/system/` via:
 ```bash
-scp systemd/compress.service root@194.233.69.204:/etc/systemd/system/compress.service
-ssh root@194.233.69.204 'systemctl daemon-reload && systemctl restart compress'
+scp systemd/compress.service root@<YOUR_VPS_IP>:/etc/systemd/system/compress.service
+ssh root@<YOUR_VPS_IP> 'systemctl daemon-reload && systemctl restart compress'
 ```
 
 ---
@@ -6363,12 +6363,12 @@ cat /root/.ssh/authorized_keys
 If this file is empty or missing, STOP — install your laptop's public key first:
 ```bash
 # On the laptop:
-ssh-copy-id root@194.233.69.204
+ssh-copy-id root@<YOUR_VPS_IP>
 # OR manually:
-cat ~/.ssh/id_ed25519.pub | ssh root@194.233.69.204 'mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
+cat ~/.ssh/id_ed25519.pub | ssh root@<YOUR_VPS_IP> 'mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
 ```
 
-Test key-based login in a second terminal (`ssh root@194.233.69.204`) and confirm it succeeds without a password prompt. Only then disable password auth:
+Test key-based login in a second terminal (`ssh root@<YOUR_VPS_IP>`) and confirm it succeeds without a password prompt. Only then disable password auth:
 ```bash
 sed -i 's/#\?PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
 systemctl restart sshd
@@ -6398,7 +6398,7 @@ Expected: `{"ok":true,...}` over HTTPS.
 - [ ] **Step 2: Service stability check**
 
 ```bash
-ssh root@194.233.69.204 'systemctl status compress --no-pager | head -5'
+ssh root@<YOUR_VPS_IP> 'systemctl status compress --no-pager | head -5'
 ```
 
 Expected: `active (running)` with no restart in the last 5 minutes. (`ssh compress@...` does not work — the `compress` user has a `nologin` shell by design.)
