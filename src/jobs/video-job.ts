@@ -49,28 +49,31 @@ interface PassContext {
 function runPass(kind: "pass1" | "pass2", ctx: PassContext): Promise<void> {
   return new Promise((resolve, reject) => {
     const baseOpts = [
-      "-c:v libx264",
-      "-preset slow",
-      `-b:v ${ctx.videoBitrateKbps}k`,
-      `-pass ${kind === "pass1" ? 1 : 2}`,
-      `-passlogfile ${ctx.passLogPrefix}`,
-      "-pix_fmt yuv420p",
-      "-profile:v high",
-      "-level 4.1",
-      `-g ${Math.round(ctx.fps * 2)}`,
+      "-c:v", "libx264",
+      "-preset", "slow",
+      "-b:v", `${ctx.videoBitrateKbps}k`,
+      "-pass", kind === "pass1" ? "1" : "2",
+      "-passlogfile", ctx.passLogPrefix,
+      "-pix_fmt", "yuv420p",
+      "-profile:v", "high",
+      "-level", "4.1",
+      "-g", `${Math.round(ctx.fps * 2)}`,
     ];
 
     const pass1Opts = [...baseOpts, "-an"];
     const pass2Opts = [
       ...baseOpts,
-      "-c:a aac",
-      `-b:a ${ctx.audioKbps}k`,
-      "-ac 2",
-      "-movflags +faststart",
+      "-c:a", "aac",
+      "-b:a", `${ctx.audioKbps}k`,
+      "-ac", "2",
+      "-movflags", "+faststart",
     ];
 
+    const opts = kind === "pass1" ? pass1Opts : pass2Opts;
     const cmd = ffmpeg(ctx.inputPath)
-      .outputOptions(kind === "pass1" ? pass1Opts : pass2Opts)
+      // Pass options as variadic args so fluent-ffmpeg sets doSplit=false,
+      // preventing paths with spaces from being split on whitespace.
+      .outputOptions(...opts)
       .on("progress", (p) => {
         if (typeof p.percent === "number") {
           ctx.onProgress(Math.min(100, Math.max(0, Math.floor(p.percent))));

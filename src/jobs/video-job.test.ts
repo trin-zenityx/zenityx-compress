@@ -40,6 +40,20 @@ describe("runVideoJob — happy path", () => {
     expect(states).toContain("pass2");
   }, 30_000);
 
+  it("handles filenames with spaces and parentheses", async () => {
+    const output = join(dir, "feb26_interview (1).ready-for-manychat.mp4");
+    const result = await runVideoJob({
+      inputPath: input,
+      outputPath: output,
+      targetMB: 1,
+      onProgress: () => {},
+    });
+
+    const { size } = await stat(output);
+    expect(size).toBeLessThanOrEqual(1024 * 1024);
+    expect(result.outputSize).toBe(size);
+  }, 30_000);
+
   it("cleans up ffmpeg 2-pass log files after success", async () => {
     const output = join(dir, "out2.mp4");
     await runVideoJob({
