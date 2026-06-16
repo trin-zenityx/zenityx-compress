@@ -42,6 +42,7 @@ interface PassContext {
   audioKbps: number;
   passLogPrefix: string;
   fps: number;
+  vf: string | undefined;
   signal: AbortSignal | undefined;
   onProgress: (percent: number) => void;
 }
@@ -60,6 +61,10 @@ function runPass(kind: "pass1" | "pass2", ctx: PassContext): Promise<void> {
       "-g", `${Math.round(ctx.fps * 2)}`,
     ];
 
+    // The downscale/fps filter MUST be identical across both passes for 2-pass
+    // stats to stay valid — both derive from baseOpts, so it always matches.
+    if (ctx.vf) baseOpts.push("-vf", ctx.vf);
+
     const pass1Opts = [...baseOpts, "-an"];
     const pass2Opts = [
       ...baseOpts,
@@ -75,7 +80,7 @@ function runPass(kind: "pass1" | "pass2", ctx: PassContext): Promise<void> {
       // preventing paths with spaces from being split on whitespace.
       .outputOptions(...opts)
       .on("progress", (p) => {
-        if (typeof p.percent === "number") {
+        if (typeof p.percent === "number" && Number.isFinite(p.percent)) {
           ctx.onProgress(Math.min(100, Math.max(0, Math.floor(p.percent))));
         }
       })
@@ -149,6 +154,26 @@ export async function runVideoJob(input: VideoJobInput): Promise<VideoJobResult>
     `pass-${parse(input.outputPath).name}`,
   );
 
+  // Phone clips are often 4K/60fps. Encoding that at full resolution with
+  // preset slow blows past the worker timeout (and 4K is pointless for a
+  // ~25 MB ManyChat target). Cap the long edge at 1920 and fps at 30 — only
+  // ever downscaling, never upscaling — so the encode stays fast and the
+  // bitrate budget lands on a resolution it can actually fill.
+  const MAX_LONG_EDGE = 1920;
+  const MAX_FPS = 30;
+  const longEdge = Math.max(probe.width, probe.height);
+  const scale = longEdge > MAX_LONG_EDGE ? MAX_LONG_EDGE / longEdge : 1;
+  const outW = Math.max(2, Math.round((probe.width * scale) / 2) * 2);
+  const outH = Math.max(2, Math.round((probe.height * scale) / 2) * 2);
+  const outFps = probe.fps > MAX_FPS ? MAX_FPS : probe.fps;
+  const vf =
+    [
+      scale < 1 ? `scale=${outW}:${outH}:flags=lanczos` : null,
+      outFps < probe.fps ? `fps=${outFps}` : null,
+    ]
+      .filter(Boolean)
+      .join(",") || undefined;
+
   try {
     await runPass("pass1", {
       inputPath: input.inputPath,
@@ -156,7 +181,8 @@ export async function runVideoJob(input: VideoJobInput): Promise<VideoJobResult>
       videoBitrateKbps,
       audioKbps,
       passLogPrefix,
-      fps: probe.fps,
+      fps: outFps,
+      vf,
       signal: input.signal,
       onProgress: (p) => input.onProgress("pass1", p),
     });
@@ -166,7 +192,8 @@ export async function runVideoJob(input: VideoJobInput): Promise<VideoJobResult>
       videoBitrateKbps,
       audioKbps,
       passLogPrefix,
-      fps: probe.fps,
+      fps: outFps,
+      vf,
       signal: input.signal,
       onProgress: (p) => input.onProgress("pass2", p),
     });
